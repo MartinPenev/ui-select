@@ -4,7 +4,7 @@
  * Version: 0.9.6 - 2015-01-12T20:24:40.589Z
  * License: MIT
  */
-
+ 
 
 (function () {
   "use strict";
@@ -92,6 +92,7 @@
     };
   }
 
+  var latestId = 0;
   angular.module('ui.select', [])
 
   .constant('uiSelectConfig', {
@@ -99,7 +100,10 @@
     searchEnabled: true,
     placeholder: '', // Empty by default, like HTML tag <select>
     refreshDelay: 1000, // In milliseconds
-    closeOnSelect: true
+    closeOnSelect: true,
+    generateId: function() {
+      return latestId++;
+    }
   })
 
   // See Rename minErr and make it accessible from outside https://github.com/angular/angular.js/issues/6913
@@ -424,7 +428,7 @@
               }
             }
             // search ctrl.selected for dupes potentially caused by tagging and return early if found
-            if ( ctrl.selected && ctrl.selected.filter( function (selection) { return angular.equals(selection, item); }).length > 0 ) {
+            if ( ctrl.selected && angular.isArray(ctrl.selected) && ctrl.selected.filter( function (selection) { return angular.equals(selection, item); }).length > 0 ) {
               ctrl.close(skipFocusser);
               return;
             }
@@ -555,14 +559,14 @@
           break;
         case KEY.UP:
           if (!ctrl.open && ctrl.multiple) ctrl.activate(false, true); //In case its the search input in 'multiple' mode
-          else if (ctrl.activeIndex > 0 || (ctrl.search.length === 0 && ctrl.tagging.isActivated)) { ctrl.activeIndex--; }
+          else if (ctrl.activeIndex > 0 || (ctrl.search.length === 0 && ctrl.tagging.isActivated && ctrl.activeIndex > -1)) { ctrl.activeIndex--; }
           break;
         case KEY.TAB:
           if (!ctrl.multiple || ctrl.open) ctrl.select(ctrl.items[ctrl.activeIndex], true);
           break;
         case KEY.ENTER:
-          if(ctrl.open){
-            ctrl.select(ctrl.items[ctrl.activeIndex]);
+          if(ctrl.open && ctrl.activeIndex >= 0){
+            ctrl.select(ctrl.items[ctrl.activeIndex]); // Make sure at least one dropdown item is highlighted before adding.
           } else {
             ctrl.activate(false, true); //In case its the search input in 'multiple' mode
           }
@@ -822,24 +826,26 @@
     }
 
     function _findApproxDupe(haystack, needle) {
-      var tempArr = angular.copy(haystack);
       var dupeIndex = -1;
-      for (var i = 0; i <tempArr.length; i++) {
-        // handle the simple string version of tagging
-        if ( ctrl.tagging.fct === undefined ) {
-          // search the array for the match
-          if ( tempArr[i]+' '+ctrl.taggingLabel === needle ) {
-            dupeIndex = i;
-          }
-        // handle the object tagging implementation
-        } else {
-          var mockObj = tempArr[i];
-          mockObj.isTag = true;
-          if ( angular.equals(mockObj, needle) ) {
-            dupeIndex = i;
-          }
-        }
-      }
+	  if(angular.isArray(haystack)) {
+		  var tempArr = angular.copy(haystack);
+		  for (var i = 0; i <tempArr.length; i++) {
+			// handle the simple string version of tagging
+			if ( ctrl.tagging.fct === undefined ) {
+			  // search the array for the match
+			  if ( tempArr[i]+' '+ctrl.taggingLabel === needle ) {
+				dupeIndex = i;
+			  }
+			// handle the object tagging implementation
+			} else {
+			  var mockObj = tempArr[i];
+			  mockObj.isTag = true;
+			  if ( angular.equals(mockObj, needle) ) {
+				dupeIndex = i;
+			  }
+			}
+		  }
+	  }
       return dupeIndex;
     }
 
@@ -855,6 +861,10 @@
       var choices = container.querySelectorAll('.ui-select-choices-row');
       if (choices.length < 1) {
         throw uiSelectMinErr('choices', "Expected multiple .ui-select-choices-row but got '{0}'.", choices.length);
+      }
+
+      if (ctrl.activeIndex < 0) {
+        return;
       }
 
       var highlighted = choices[ctrl.activeIndex];
@@ -899,6 +909,11 @@
         var ngModel = ctrls[1];
 
         var searchInput = element.querySelectorAll('input.ui-select-search');
+
+        $select.generatedId = uiSelectConfig.generateId();
+        $select.baseTitle = attrs.title || 'Select box';
+        $select.focusserTitle = $select.baseTitle + ' focus';
+        $select.focusserId = 'focusser-' + $select.generatedId;
 
         $select.multiple = angular.isDefined(attrs.multiple) && (
             attrs.multiple === '' ||
@@ -951,6 +966,13 @@
                 for (var p = list.length - 1; p >= 0; p--) {
                   locals[$select.parserResult.itemName] = list[p];
                   result = $select.parserResult.modelMapper(scope, locals);
+                  if($select.parserResult.trackByExp){
+                      var matches = /\.(.+)/.exec($select.parserResult.trackByExp);
+                      if(matches.length>0 && result[matches[1]] == value[matches[1]]){
+                          resultMultiple.unshift(list[p]);
+                          return true;
+                      }
+                  }
                   if (result == value){
                     resultMultiple.unshift(list[p]);
                     return true;
@@ -991,7 +1013,7 @@
         };
 
         //Idea from: https://github.com/ivaynberg/select2/blob/79b5bf6db918d7560bdd959109b7bcfb47edaf43/select2.js#L1954
-        var focusser = angular.element("<input ng-disabled='$select.disabled' class='ui-select-focusser ui-select-offscreen' type='text' aria-haspopup='true' role='button' />");
+        var focusser = angular.element("<input ng-disabled='$select.disabled' class='ui-select-focusser ui-select-offscreen' type='text' id='{{ $select.focusserId }}' aria-label='{{ $select.focusserTitle }}' aria-haspopup='true' role='button' />");
 
         if(attrs.tabindex){
           //tabindex might be an expression, wait until it contains the actual value before we set the focusser tabindex

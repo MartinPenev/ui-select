@@ -1100,7 +1100,7 @@
         });
 
         attrs.$observe('tagging', function() {
-          if(attrs.tagging !== undefined)
+          if(attrs.tagging !== undefined && attrs.tagging != 'undefined')
           {
             // $eval() is needed otherwise we get a string instead of a boolean
             var taggingEval = scope.$eval(attrs.tagging);
